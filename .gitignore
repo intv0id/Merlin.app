@@ -1,0 +1,6 @@
+bin/
+obj/
+Merlin.Core/Merlin.Planner/bin/
+Merlin.Core/Merlin.Planner/obj/
+Merlin.Core/Merlin.Solvers/bin/
+Merlin.Core/Merlin.Solvers/obj/

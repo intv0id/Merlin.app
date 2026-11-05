@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyName>Merlin.Solvers</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Decider" Version="1.0.2" />
+    <PackageReference Include="Google.OrTools" Version="9.4.1874" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Merlin.Planner\Merlin.Planner.csproj" />
+  </ItemGroup>
+</Project>

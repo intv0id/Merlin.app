@@ -1,0 +1,256 @@
+@page "/"
+@using Merlin.Planner
+@using Merlin.Planner.Model
+@using Merlin.Planner.Constraint
+@using Merlin.Solvers.Decider
+@using Merlin.Solvers.ORTools
+@using Merlin.Solvers.Greedy
+@using Merlin.Planner.Helpers
+
+<PageTitle>Merlin Planner</PageTitle>
+
+<h1>Merlin On-Call Planner</h1>
+
+<div class="row">
+    <div class="col-md-5">
+        <h3>Settings</h3>
+
+        <div class="mb-3">
+            <label>Solver</label>
+            <select class="form-select" @bind="SelectedSolver">
+                <option value="Decider">DeciderSolver</option>
+                <option value="ORTools">ORToolsSolver</option>
+                <option value="Greedy">GreedySolver</option>
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label>Start Date</label>
+            <input type="date" class="form-control" @bind="StartDate" />
+        </div>
+
+        <div class="mb-3">
+            <label>End Date</label>
+            <input type="date" class="form-control" @bind="EndDate" />
+        </div>
+
+        <h4>Employees</h4>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" placeholder="Employee Name" @bind="NewEmployeeName" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="AddEmployee">Add</button>
+        </div>
+
+        <ul class="list-group mb-3">
+            @foreach (var emp in Employees)
+            {
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    @emp.Name
+                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveEmployee(emp)">X</button>
+                </li>
+            }
+        </ul>
+
+        <h4>Vacation Constraints</h4>
+        <div class="row mb-3">
+            <div class="col">
+                <select class="form-select" @bind="VacationEmployeeName">
+                    <option value="">Select Employee</option>
+                    @foreach (var emp in Employees)
+                    {
+                        <option value="@emp.Name">@emp.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col">
+                <input type="date" class="form-control" @bind="VacationStart" />
+            </div>
+            <div class="col">
+                <input type="date" class="form-control" @bind="VacationEnd" />
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-outline-secondary" type="button" @onclick="AddVacation">Add Vacation</button>
+            </div>
+        </div>
+
+        <ul class="list-group mb-3">
+            @foreach (var vac in Vacations)
+            {
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    @vac.EmployeeName: @vac.Start.ToShortDateString() - @vac.End.ToShortDateString()
+                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveVacation(vac)">X</button>
+                </li>
+            }
+        </ul>
+
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="notConsecutive" @bind="UseNotConsecutiveDaysConstraint">
+            <label class="form-check-label" for="notConsecutive">
+                Use Not Consecutive Days Constraint
+            </label>
+        </div>
+
+        <button class="btn btn-primary" @onclick="GeneratePlan" disabled="@IsComputing">
+            @(IsComputing ? "Computing..." : "Generate Plan")
+        </button>
+    </div>
+
+    <div class="col-md-7">
+        <h3>Results</h3>
+
+        @if (HasError)
+        {
+            <div class="alert alert-danger">
+                @ErrorMessage
+            </div>
+        }
+
+        @if (ResultSchedule != null)
+        {
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Assigned To</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var slot in ResultSchedule.Slots)
+                    {
+                        <tr>
+                            <td>@slot.Date.ToString("ddd yyyy/MM/dd")</td>
+                            <td>@(slot.Employee?.Name ?? "Unassigned")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@code {
+    private string SelectedSolver { get; set; } = "Decider";
+    private DateTime StartDate { get; set; } = DateTime.Today;
+    private DateTime EndDate { get; set; } = DateTime.Today.AddDays(14);
+
+    private string NewEmployeeName { get; set; } = "";
+    private List<Employee> Employees { get; set; } = new();
+
+    private string VacationEmployeeName { get; set; } = "";
+    private DateTime VacationStart { get; set; } = DateTime.Today;
+    private DateTime VacationEnd { get; set; } = DateTime.Today.AddDays(1);
+
+    private List<VacationRequest> Vacations { get; set; } = new();
+    private bool UseNotConsecutiveDaysConstraint { get; set; } = true;
+
+    private bool IsComputing { get; set; } = false;
+    private bool HasError { get; set; } = false;
+    private string ErrorMessage { get; set; } = "";
+
+    private Schedule? ResultSchedule { get; set; }
+
+    private void AddEmployee()
+    {
+        if (!string.IsNullOrWhiteSpace(NewEmployeeName) && !Employees.Any(e => e.Name == NewEmployeeName))
+        {
+            Employees.Add(new Employee(NewEmployeeName));
+            NewEmployeeName = "";
+        }
+    }
+
+    private void RemoveEmployee(Employee emp)
+    {
+        Employees.Remove(emp);
+        Vacations.RemoveAll(v => v.EmployeeName == emp.Name);
+    }
+
+    private void AddVacation()
+    {
+        if (!string.IsNullOrEmpty(VacationEmployeeName) && VacationStart <= VacationEnd)
+        {
+            Vacations.Add(new VacationRequest { EmployeeName = VacationEmployeeName, Start = VacationStart, End = VacationEnd });
+        }
+    }
+
+    private void RemoveVacation(VacationRequest vac)
+    {
+        Vacations.Remove(vac);
+    }
+
+    private async Task GeneratePlan()
+    {
+        IsComputing = true;
+        HasError = false;
+        ResultSchedule = null;
+        StateHasChanged();
+
+        try
+        {
+            ISolver solver = SelectedSolver switch
+            {
+                "ORTools" => new ORToolsSolver(),
+                "Greedy" => new GreedySolver(),
+                _ => new DeciderSolver()
+            };
+
+            var planner = new Planner(solver);
+
+            planner.SetDates(StartDate, EndDate);
+
+            foreach (var emp in Employees)
+            {
+                planner.AddEmployee(emp);
+            }
+
+            foreach (var vac in Vacations)
+            {
+                var emp = Employees.FirstOrDefault(e => e.Name == vac.EmployeeName);
+                if (emp != null)
+                {
+                    planner.AddConstraint(new VacationConstraint(emp, vac.Start, vac.End));
+                }
+            }
+
+            if (UseNotConsecutiveDaysConstraint)
+            {
+                planner.AddConstraint(new NotConsecutiveDaysConstraint());
+            }
+
+            await Task.Yield();
+            planner.Start();
+
+            while (!planner.GetPlanning().ComputeStatus.IsFinal())
+            {
+                await Task.Delay(200);
+            }
+
+            var result = planner.GetPlanning();
+
+            if (result.ComputeStatus == PlanningComputeStatus.Failed)
+            {
+                HasError = true;
+                ErrorMessage = $"Schedule compute failed with status {result.ErrorCode}";
+            }
+            else
+            {
+                ResultSchedule = result.Schedule;
+            }
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsComputing = false;
+            StateHasChanged();
+        }
+    }
+
+    private class VacationRequest
+    {
+        public string EmployeeName { get; set; } = "";
+        public DateTime Start { get; set; }
+        public DateTime End { get; set; }
+    }
+}
